@@ -1,0 +1,62 @@
+[
+  {
+    "id": "p_001",
+    "title": "Wireless Earbuds",
+    "desc": "Clear sound, long battery life",
+    "price": 59.9,
+    "currency": "EUR",
+    "image": "https://images.unsplash.com/photo-1518442072185-49349cddf34e?q=80&w=800&auto=format&fit=crop",
+    "category": "electronics",
+    "brand": "Lyvo",
+    "store": "DemoStore",
+    "url": "https://example.com/p/earbuds",
+    "aff_url": "https://example.com/aff?sku=p_001",
+    "available": true,
+    "rating": 4.6
+  },
+  {
+    "id": "p_002",
+    "title": "Running Shoes",
+    "desc": "Lightweight daily trainers",
+    "price": 79.0,
+    "currency": "EUR",
+    "image": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=800&auto=format&fit=crop",
+    "category": "sports",
+    "brand": "Lyvo",
+    "store": "DemoStore",
+    "url": "https://example.com/p/shoes",
+    "aff_url": "https://example.com/aff?sku=p_002",
+    "available": true,
+    "rating": 4.4
+  },
+  {
+    "id": "p_003",
+    "title": "Smart Kettle",
+    "desc": "Temperature control electric kettle",
+    "price": 49.0,
+    "currency": "EUR",
+    "image": "https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=800&auto=format&fit=crop",
+    "category": "home",
+    "brand": "Lyvo",
+    "store": "DemoStore",
+    "url": "https://example.com/p/kettle",
+    "aff_url": "https://example.com/aff?sku=p_003",
+    "available": true,
+    "rating": 4.2
+  },
+  {
+    "id": "p_004",
+    "title": "Cotton Hoodie",
+    "desc": "Comfy unisex hoodie",
+    "price": 39.0,
+    "currency": "EUR",
+    "image": "https://images.unsplash.com/photo-1515378791036-0648a3ef77b2?q=80&w=800&auto=format&fit=crop",
+    "category": "fashion",
+    "brand": "Lyvo",
+    "store": "DemoStore",
+    "url": "https://example.com/p/hoodie",
+    "aff_url": "https://example.com/aff?sku=p_004",
+    "available": true,
+    "rating": 4.5
+  }
+]
