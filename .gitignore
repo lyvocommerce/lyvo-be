@@ -1,9 +1,14 @@
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+.Python
 
-# OS
-.DS_Store
-
-# Secrets (держим вне репозитория)
+# Env & secrets
 .env
+
+# OS / editor junk
+.DS_Store
+.idea/
+.vscode/

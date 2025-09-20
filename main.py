@@ -1,87 +1,111 @@
-from fastapi import FastAPI, Request
+# main.py — Lyvo Backend (FastAPI)
+# Endpoints:
+#   GET  /            -> health/info
+#   GET  /health      -> health ping
+#   GET  /categories  -> list of product categories
+#   GET  /products    -> catalog with filters/sorting/pagination
+#   POST /webhook     -> receive events from Mini App
+
+import os
+import json
+from pathlib import Path
+from typing import List, Dict, Any, Optional
+
+from fastapi import FastAPI, Request, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
+# -----------------------------------------------------------------------------
+# FastAPI app + CORS
+# -----------------------------------------------------------------------------
+app = FastAPI(title="Lyvo Backend")
 
-# --- CORS: разрешаем запросы с твоего фронта на Vercel ---
+# Frontend URL (for CORS)
+FRONT_URL = os.getenv("WEBAPP_URL", "https://lyvo.vercel.app")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://lyvo.vercel.app",
-    ],
-    allow_origin_regex=r"https://.*\.vercel\.app",  # превью Vercel (опционально)
+    allow_origins=[FRONT_URL],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# -----------------------------------------------------------------------------
+# Health endpoints
+# -----------------------------------------------------------------------------
 @app.get("/")
 def root():
+    """Return basic service info."""
+    return {"status": "ok", "service": "lyvo-be"}
+
+@app.get("/health")
+def health():
+    """Simple health check."""
     return {"status": "ok"}
 
-# Приём данных от Mini App
-@app.post("/webhook")
-async def webhook(req: Request):
-    data = await req.json()
-    # Здесь пока просто логируем, потом будем сохранять/обрабатывать
-    print("MiniApp event:", data)
-    return {"received": True, "echo": data}
-
-# --- Catalog demo (categories + products) ---
-import json, math
-from pathlib import Path
-from fastapi import Query
-
+# -----------------------------------------------------------------------------
+# Demo catalog
+# -----------------------------------------------------------------------------
 DATA_PATH = Path(__file__).parent / "data" / "products_demo.json"
-PRODUCTS = []
+PRODUCTS: List[Dict[str, Any]] = []
 
-def load_products():
+def load_products() -> None:
+    """Load demo products from JSON file."""
     global PRODUCTS
     try:
-        PRODUCTS = json.loads(DATA_PATH.read_text(encoding="utf-8"))
+        if DATA_PATH.exists():
+            PRODUCTS = json.loads(DATA_PATH.read_text(encoding="utf-8"))
+        else:
+            PRODUCTS = []
     except Exception as e:
-        PRODUCTS = []
         print("Failed to load demo products:", e)
+        PRODUCTS = []
 
 @app.on_event("startup")
-def _load_on_start():
+def on_startup():
+    """Load data when the service starts."""
     load_products()
 
-def list_categories():
-    cats = sorted({p.get("category", "other") for p in PRODUCTS})
-    return cats
+def list_categories() -> List[str]:
+    """Extract unique categories from products."""
+    return sorted({p.get("category", "other") for p in PRODUCTS})
 
 @app.get("/categories")
 def get_categories():
+    """Return list of categories."""
     return {"items": list_categories()}
 
 @app.get("/products")
 def get_products(
-    q: str | None = None,
-    category: str | None = None,
-    min_price: float | None = Query(None, ge=0),
-    max_price: float | None = Query(None, ge=0),
-    sort: str | None = Query(None, pattern="^(price_asc|price_desc|newest|popular)$"),
+    q: Optional[str] = None,
+    category: Optional[str] = None,
+    min_price: Optional[float] = Query(None, ge=0),
+    max_price: Optional[float] = Query(None, ge=0),
+    sort: Optional[str] = Query(None, pattern="^(price_asc|price_desc|newest|popular)$"),
     page: int = Query(1, ge=1),
     page_size: int = Query(12, ge=1, le=60),
 ):
+    """Return products with optional filters, sorting and pagination."""
     items = PRODUCTS[:]
 
-    # фильтры
+    # Filtering
     if category:
         items = [p for p in items if p.get("category") == category]
     if q:
-        s = q.strip().lower()
+        needle = q.strip().lower()
         items = [
             p for p in items
-            if s in p.get("title","").lower() or s in p.get("desc","").lower() or s in p.get("brand","").lower()
+            if needle in (p.get("title", "").lower())
+            or needle in (p.get("desc", "").lower())
+            or needle in (p.get("brand", "").lower())
         ]
     if min_price is not None:
-        items = [p for p in items if float(p.get("price", 0)) >= min_price]
+        items = [p for p in items if float(p.get("price", 0)) >= float(min_price)]
     if max_price is not None:
-        items = [p for p in items if float(p.get("price", 0)) <= max_price]
+        items = [p for p in items if float(p.get("price", 0)) <= float(max_price)]
 
-    # сортировка
+    # Sorting
     if sort == "price_asc":
         items.sort(key=lambda p: float(p.get("price", 0)))
     elif sort == "price_desc":
@@ -89,10 +113,9 @@ def get_products(
     elif sort == "popular":
         items.sort(key=lambda p: float(p.get("rating", 0)), reverse=True)
     elif sort == "newest":
-        # у демо нет даты — оставляем как есть; позже добавим поле date
-        pass
+        pass  # demo data has no date
 
-    # пагинация
+    # Pagination
     total = len(items)
     start = (page - 1) * page_size
     end = start + page_size
@@ -104,3 +127,20 @@ def get_products(
         "total": total,
         "items": items_page,
     }
+
+# -----------------------------------------------------------------------------
+# Webhook (Mini App events)
+# -----------------------------------------------------------------------------
+@app.post("/webhook")
+async def webhook(req: Request):
+    """
+    Receive data from the Telegram Mini App via tg.sendData().
+    For now: log and echo back the payload.
+    """
+    try:
+        data = await req.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON")
+
+    print("MiniApp event:", data)  # visible in Render logs
+    return {"ok": True, "echo": data}
