@@ -7,7 +7,7 @@
 #   POST /webhook     -> receive events from Mini App
 
 import os
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 from fastapi import FastAPI, Request, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,12 +15,13 @@ from fastapi.middleware.cors import CORSMiddleware
 import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
+from psycopg import OperationalError
 
 # -----------------------------------------------------------------------------
 # Config
 # -----------------------------------------------------------------------------
 DATABASE_URL = os.environ["DATABASE_URL"]  # в Render уже настроено
-FRONT_URL = os.getenv("WEBAPP_URL", "https://lyvo-shop.vercel.app")  # твой фронт на Vercel
+FRONT_URL = os.getenv("WEBAPP_URL", "https://lyvo-shop.vercel.app")
 
 # -----------------------------------------------------------------------------
 # FastAPI + CORS
@@ -37,7 +38,7 @@ app.add_middleware(
 )
 
 # -----------------------------------------------------------------------------
-# DB Pool (psycopg v3)
+# Connection Pool (psycopg v3) + auto-reconnect
 # -----------------------------------------------------------------------------
 pool = ConnectionPool(
     conninfo=DATABASE_URL,
@@ -46,6 +47,24 @@ pool = ConnectionPool(
     max_size=5,
     open=True,
 )
+
+
+def safe_connection():
+    """Возвращает живое соединение, пересоздает pool при обрыве Render/Neon."""
+    global pool
+    try:
+        return pool.connection()
+    except OperationalError:
+        print("⚠️  Recreating DB connection pool after SSL disconnect...")
+        pool.close()
+        pool = ConnectionPool(
+            conninfo=DATABASE_URL,
+            kwargs={"sslmode": "require"},
+            min_size=1,
+            max_size=5,
+            open=True,
+        )
+        return pool.connection()
 
 # -----------------------------------------------------------------------------
 # Health
@@ -88,23 +107,22 @@ def build_filters(
     clause = "WHERE " + " AND ".join(where) if where else ""
     return clause, params
 
+
 def build_order(sort: Optional[str]) -> str:
     if sort == "price_asc":
         return "ORDER BY price_min ASC NULLS LAST"
     if sort == "price_desc":
         return "ORDER BY price_min DESC NULLS LAST"
     if sort == "popular":
-        # заглушка: сортируем по title; когда будет поле popularity — заменим
         return "ORDER BY title ASC"
-    # newest / default
     return "ORDER BY created_at DESC"
 
 # -----------------------------------------------------------------------------
-# Categories (from DB)
+# Categories
 # -----------------------------------------------------------------------------
 @app.get("/categories")
 def get_categories():
-    with pool.connection() as conn:
+    with safe_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT DISTINCT category
@@ -116,7 +134,7 @@ def get_categories():
     return {"items": cats}
 
 # -----------------------------------------------------------------------------
-# Products (from DB)
+# Products
 # -----------------------------------------------------------------------------
 @app.get("/products")
 def get_products(
@@ -144,12 +162,11 @@ def get_products(
         LIMIT %s OFFSET %s;
     """
 
-    with pool.connection() as conn:
-        # total
+    with safe_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(count_sql, params)
             total = cur.fetchone()[0]
-        # page
+
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(list_sql, params + [page_size, offset])
             items = cur.fetchall()
@@ -171,5 +188,5 @@ async def webhook(req: Request):
         data = await req.json()
     except Exception:
         raise HTTPException(400, "Invalid JSON")
-    print("MiniApp event:", data)  # видно в Render logs
+    print("MiniApp event:", data)
     return {"ok": True, "echo": data}
