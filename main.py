@@ -190,3 +190,36 @@ async def webhook(req: Request):
         raise HTTPException(400, "Invalid JSON")
     print("MiniApp event:", data)
     return {"ok": True, "echo": data}
+
+
+# -----------------------------------------------------------------------------
+# Telegram Auth — verify initData from Mini App
+# -----------------------------------------------------------------------------
+import hmac, hashlib, urllib.parse, json
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # добавь эту переменную в Render → Environment
+
+@app.post("/auth")
+async def telegram_auth(req: Request):
+    """Проверяет initData из Telegram Mini App"""
+    data = await req.json()
+    init_data = data.get("initData", "")
+    if not init_data:
+        return {"ok": False, "error": "missing initData"}
+
+    parsed = dict(urllib.parse.parse_qsl(init_data))
+    check_hash = parsed.pop("hash", None)
+    if not check_hash:
+        return {"ok": False, "error": "no hash"}
+
+    secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
+    data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
+    computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+
+    if computed_hash != check_hash:
+        return {"ok": False, "error": "invalid hash"}
+
+    user_json = parsed.get("user")
+    user = json.loads(user_json) if user_json else None
+
+    return {"ok": True, "user": user}
