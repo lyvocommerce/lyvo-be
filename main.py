@@ -204,20 +204,25 @@ async def telegram_auth(req: Request):
 
     import urllib.parse, hmac, hashlib, json
 
-    parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True, strict_parsing=False))
+    # ✅ сначала полностью декодируем строку
+    parsed = dict(urllib.parse.parse_qsl(
+        urllib.parse.unquote(init_data),
+        keep_blank_values=True,
+        strict_parsing=False
+    ))
 
-    # ✅ Нормализуем: заменяем '\/' на '/'
+    # ✅ заменяем '\/' на '/'
     for k, v in parsed.items():
         parsed[k] = v.replace("\\/", "/")
 
-    # ✅ Удаляем неиспользуемые поля
+    # ✅ удаляем неиспользуемые поля
     check_hash = parsed.pop("hash", None)
     parsed.pop("signature", None)
 
-    # ✅ Формируем строку строго по правилам Telegram
+    # ✅ формируем строку строго по правилам Telegram
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
 
-    # ✅ Правильный секретный ключ по Telegram API
+    # ✅ вычисляем правильный секрет
     secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
@@ -237,7 +242,6 @@ async def telegram_auth(req: Request):
     try:
         user = json.loads(user_json) if user_json else None
     except json.JSONDecodeError:
-        print("⚠️ JSON decode error in user field")
         user = None
 
     return {"ok": True, "user": user}
