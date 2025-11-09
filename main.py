@@ -5,6 +5,7 @@
 #   GET  /categories  -> list of product categories (from DB)
 #   GET  /products    -> catalog with filters/sorting/pagination (from DB)
 #   POST /webhook     -> receive events from Mini App
+#   POST /auth        -> Telegram authentication check
 
 import os
 from typing import Optional, Tuple
@@ -20,7 +21,7 @@ from psycopg import OperationalError
 # -----------------------------------------------------------------------------
 # Config
 # -----------------------------------------------------------------------------
-DATABASE_URL = os.environ["DATABASE_URL"]  # в Render уже настроено
+DATABASE_URL = os.environ["DATABASE_URL"]
 FRONT_URL = os.getenv("WEBAPP_URL", "https://lyvo-shop.vercel.app")
 
 # -----------------------------------------------------------------------------
@@ -48,9 +49,7 @@ pool = ConnectionPool(
     open=True,
 )
 
-
 def safe_connection():
-    """Возвращает живое соединение, пересоздает pool при обрыве Render/Neon."""
     global pool
     try:
         return pool.connection()
@@ -183,7 +182,6 @@ def get_products(
 # -----------------------------------------------------------------------------
 @app.post("/webhook")
 async def webhook(req: Request):
-    """Receive data from the Telegram Mini App via tg.sendData()."""
     try:
         data = await req.json()
     except Exception:
@@ -191,13 +189,12 @@ async def webhook(req: Request):
     print("MiniApp event:", data)
     return {"ok": True, "echo": data}
 
-
 # -----------------------------------------------------------------------------
 # Telegram Auth — verify initData from Mini App
 # -----------------------------------------------------------------------------
 import hmac, hashlib, urllib.parse, json
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # добавь эту переменную в Render → Environment
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 @app.post("/auth")
 async def telegram_auth(req: Request):
@@ -209,6 +206,8 @@ async def telegram_auth(req: Request):
 
     parsed = dict(urllib.parse.parse_qsl(init_data))
     check_hash = parsed.pop("hash", None)
+    parsed.pop("signature", None)  # ✅ Telegram не включает это в подпись
+
     if not check_hash:
         return {"ok": False, "error": "no hash"}
 
