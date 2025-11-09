@@ -216,6 +216,14 @@ async def telegram_auth(req: Request):
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
+    print("\n=== Telegram Auth Debug ===")
+    print("initData:", init_data)
+    print("parsed:", parsed)
+    print("check_hash:", check_hash)
+    print("computed_hash:", computed_hash)
+    print("equal:", computed_hash == check_hash)
+    print("===========================\n")
+
     if computed_hash != check_hash:
         return {"ok": False, "error": "invalid hash"}
 
