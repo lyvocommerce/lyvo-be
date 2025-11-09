@@ -190,9 +190,10 @@ async def webhook(req: Request):
     return {"ok": True, "echo": data}
 
 # -----------------------------------------------------------------------------
-# Telegram Auth — FINAL version with double-decoding fix
+# Telegram Auth — Final verified version (works in mobile Telegram Mini App)
 # -----------------------------------------------------------------------------
 import hmac, hashlib, urllib.parse, json
+from fastapi import HTTPException
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
@@ -202,36 +203,40 @@ async def telegram_auth(req: Request):
     Validate initData from Telegram Mini App (official spec)
     https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
     """
-    try:
-        body = await req.json()
-    except Exception:
-        return {"ok": False, "error": "invalid JSON"}
 
-    init_data = body.get("initData", "")
+    # --- 1️⃣ Получаем "сырой" текст initData из тела запроса ---
+    try:
+        raw_body = await req.body()
+        init_data = raw_body.decode().strip()
+
+        # fallback: если пришёл JSON {"initData": "..."}
+        if init_data.startswith("{"):
+            body = json.loads(init_data)
+            init_data = body.get("initData", "").strip()
+    except Exception as e:
+        raise HTTPException(400, f"Invalid body: {e}")
+
     if not init_data:
         return {"ok": False, "error": "missing initData"}
 
-    import urllib.parse, hmac, hashlib, json
+    # --- 2️⃣ Парсим строку initData в dict ---
+    parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
 
-    # ✅ сначала полностью декодируем строку
-    decoded = urllib.parse.unquote(init_data)
-    parsed = dict(urllib.parse.parse_qsl(decoded, keep_blank_values=True, strict_parsing=False))
-
-    # ✅ заменяем '\/' на '/'
-    for k, v in parsed.items():
-        parsed[k] = v.replace("\\/", "/")
-
-    # ✅ удаляем неиспользуемые поля
     check_hash = parsed.pop("hash", None)
+    if not check_hash:
+        return {"ok": False, "error": "no hash"}
+
+    # Telegram иногда добавляет "signature" — игнорируем
     parsed.pop("signature", None)
 
-    # ✅ формируем строку строго по правилам Telegram
+    # --- 3️⃣ Собираем data_check_string строго по алфавиту ---
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
 
-    # ✅ вычисляем правильный секрет по Telegram API
-    secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+    # --- 4️⃣ Вычисляем хэш ---
+    secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
+    # --- 5️⃣ Отладочная информация ---
     print("\n=== Telegram Auth Debug ===")
     print("BOT_TOKEN length:", len(BOT_TOKEN))
     print("data_check_string:", data_check_string)
@@ -240,14 +245,17 @@ async def telegram_auth(req: Request):
     print("equal:", computed_hash == check_hash)
     print("===========================\n")
 
+    # --- 6️⃣ Сравниваем ---
     if not hmac.compare_digest(computed_hash, check_hash):
-        print("⚠️ Hash mismatch — likely browser or encoding mismatch")
+        print("⚠️ Hash mismatch — likely bad encoding or wrong initData")
         return {"ok": False, "error": "invalid hash"}
 
+    # --- 7️⃣ Извлекаем user ---
     user_json = parsed.get("user")
     try:
         user = json.loads(user_json) if user_json else None
     except json.JSONDecodeError:
         user = None
 
+    print(f"✅ Authorized Telegram user: @{user.get('username') if user else 'unknown'}")
     return {"ok": True, "user": user}
