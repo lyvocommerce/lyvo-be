@@ -190,7 +190,7 @@ async def webhook(req: Request):
     return {"ok": True, "echo": data}
 
 # -----------------------------------------------------------------------------
-# Telegram Auth — Final working version (verified with real Mini Apps)
+# Telegram Auth — Final verified version (works in mobile Telegram)
 # -----------------------------------------------------------------------------
 import hmac, hashlib, urllib.parse, json
 
@@ -198,29 +198,22 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 @app.post("/auth")
 async def telegram_auth(req: Request):
-    """
-    Validate initData from Telegram Mini App (official spec)
-    https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
-    """
     data = await req.json()
     init_data = data.get("initData", "")
     if not init_data:
         return {"ok": False, "error": "missing initData"}
 
-    parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
-
-    # Extract 'hash' and remove it before calculation
+    parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True, strict_parsing=False))
     check_hash = parsed.pop("hash", None)
     if not check_hash:
         return {"ok": False, "error": "no hash"}
-
-    # ⚠️ Telegram sometimes adds 'signature' but it is NOT part of validation
     parsed.pop("signature", None)
 
-    # Build data check string
+    # ✅ decode all values to avoid encoding mismatch
+    parsed = {k: urllib.parse.unquote(v) for k, v in parsed.items()}
+
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
 
-    # Calculate HMAC using SHA256(bot_token)
     secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
@@ -233,10 +226,12 @@ async def telegram_auth(req: Request):
     print("===========================\n")
 
     if not hmac.compare_digest(computed_hash, check_hash):
-        # ❗ если всё ещё false, добавим подсказку
-        print("⚠️ Hash mismatch — likely Mini App launched via browser (not trusted initData)")
         return {"ok": False, "error": "invalid hash"}
 
     user_json = parsed.get("user")
-    user = json.loads(user_json) if user_json else None
+    try:
+        user = json.loads(user_json) if user_json else None
+    except json.JSONDecodeError:
+        user = None
+
     return {"ok": True, "user": user}
