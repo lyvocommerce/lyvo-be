@@ -206,16 +206,18 @@ async def telegram_auth(req: Request):
 
     parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True, strict_parsing=False))
 
-    check_hash = parsed.pop("hash", None)
-    if not check_hash:
-        return {"ok": False, "error": "no hash"}
-
     # ✅ Нормализуем: заменяем '\/' на '/'
     for k, v in parsed.items():
         parsed[k] = v.replace("\\/", "/")
 
+    # ✅ Удаляем неиспользуемые поля
+    check_hash = parsed.pop("hash", None)
+    parsed.pop("signature", None)
+
+    # ✅ Формируем строку строго по правилам Telegram
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
 
+    # ✅ Вычисляем хэш
     secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
