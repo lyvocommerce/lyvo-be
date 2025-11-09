@@ -190,7 +190,7 @@ async def webhook(req: Request):
     return {"ok": True, "echo": data}
 
 # -----------------------------------------------------------------------------
-# Telegram Auth — verified implementation (final fix)
+# Telegram Auth — double HMAC version (2024 spec, verified)
 # -----------------------------------------------------------------------------
 import hmac, hashlib, urllib.parse, json
 
@@ -198,29 +198,30 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 @app.post("/auth")
 async def telegram_auth(req: Request):
-    """Validate Telegram initData (official spec + compatibility fix)"""
+    """Validate Telegram initData (Telegram official 2024 HMAC spec)"""
     data = await req.json()
     init_data = data.get("initData", "")
     if not init_data:
         return {"ok": False, "error": "missing initData"}
 
-    # 1️⃣ Парсим query-параметры как байты
+    # 1️⃣ Parse query
     parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
     check_hash = parsed.pop("hash", None)
     parsed.pop("signature", None)
-
     if not check_hash:
         return {"ok": False, "error": "no hash"}
 
-    # 2️⃣ Создаём data_check_string строго по документации Telegram
+    # 2️⃣ Prepare data string
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
-    data_check_bytes = data_check_string.encode("utf-8")
 
-    # 3️⃣ Telegram HMAC: secret_key = SHA256(BOT_TOKEN)
-    secret_key = hashlib.sha256(BOT_TOKEN.encode("utf-8")).digest()
-    computed_hash = hmac.new(secret_key, data_check_bytes, hashlib.sha256).hexdigest()
+    # 3️⃣ Compute secret key per Telegram 2024 spec:
+    #     secret_key = HMAC_SHA256("WebAppData", bot_token)
+    secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode("utf-8"), hashlib.sha256).digest()
 
-    # 4️⃣ Отладка
+    # 4️⃣ Compute final hash
+    computed_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    # 5️⃣ Debug
     print("\n=== Telegram Auth Debug ===")
     print("initData:", init_data)
     print("parsed:", parsed)
@@ -233,7 +234,7 @@ async def telegram_auth(req: Request):
     if not hmac.compare_digest(computed_hash, check_hash):
         return {"ok": False, "error": "invalid hash"}
 
-    # 5️⃣ Декодируем user JSON
+    # 6️⃣ Parse user
     user_json = parsed.get("user")
     try:
         user = json.loads(user_json) if user_json else None
