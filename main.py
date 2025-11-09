@@ -190,7 +190,7 @@ async def webhook(req: Request):
     return {"ok": True, "echo": data}
 
 # -----------------------------------------------------------------------------
-# Telegram Auth — correct version for WebApp (Mini App)
+# Telegram Auth — final correct version for Mini App (WebApp)
 # -----------------------------------------------------------------------------
 import hmac, hashlib, urllib.parse, json
 
@@ -199,22 +199,26 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 @app.post("/auth")
 async def telegram_auth(req: Request):
     """
-    Validate initData from Telegram Mini App
-    https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+    Validate initData from Telegram Mini App (official)
+    Docs: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
     """
     data = await req.json()
     init_data = data.get("initData", "")
     if not init_data:
         return {"ok": False, "error": "missing initData"}
 
+    # Parse initData
     parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
     check_hash = parsed.pop("hash", None)
     parsed.pop("signature", None)
 
+    # Build data check string
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
 
-    # ✅ correct for Mini App:
+    # ✅ Correct algorithm for Mini Apps
+    # secret_key = HMAC_SHA256("WebAppData", bot_token)
     secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+    # ✅ Then compute hash = HMAC_SHA256(secret_key, data_check_string)
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
     print("\n=== Telegram Auth Debug ===")
@@ -223,11 +227,18 @@ async def telegram_auth(req: Request):
     print("check_hash:", check_hash)
     print("computed_hash:", computed_hash)
     print("equal:", computed_hash == check_hash)
-    print("===========================\n")
+    print("===========================")
 
     if not hmac.compare_digest(computed_hash, check_hash):
+        print("⚠️ Hash mismatch — likely browser or wrong BOT_TOKEN")
         return {"ok": False, "error": "invalid hash"}
 
     user_json = parsed.get("user")
-    user = json.loads(user_json) if user_json else None
+    try:
+        user = json.loads(user_json) if user_json else None
+    except json.JSONDecodeError:
+        print("⚠️ JSON decode error in user field")
+        user = None
+
+    print("✅ Telegram Auth OK —", user.get("username") if user else "unknown")
     return {"ok": True, "user": user}
