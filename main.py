@@ -190,7 +190,7 @@ async def webhook(req: Request):
     return {"ok": True, "echo": data}
 
 # -----------------------------------------------------------------------------
-# Telegram Auth — verify initData from Mini App
+# Telegram Auth — verify initData from Mini App (final fixed version)
 # -----------------------------------------------------------------------------
 import hmac, hashlib, urllib.parse, json
 
@@ -198,23 +198,29 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 @app.post("/auth")
 async def telegram_auth(req: Request):
-    """Проверяет initData из Telegram Mini App"""
+    """Validate Telegram initData according to official Mini App spec"""
     data = await req.json()
     init_data = data.get("initData", "")
     if not init_data:
         return {"ok": False, "error": "missing initData"}
 
-    parsed = dict(urllib.parse.parse_qsl(init_data))
-    check_hash = parsed.pop("hash", None)
-    parsed.pop("signature", None)  # ✅ Telegram не включает это в подпись
+    # 1️⃣ Разбираем initData как query string
+    parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
 
+    # 2️⃣ Убираем hash (он нужен только для проверки)
+    check_hash = parsed.pop("hash", None)
+    parsed.pop("signature", None)
     if not check_hash:
         return {"ok": False, "error": "no hash"}
 
-    secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
+    # 3️⃣ Собираем строку для проверки в алфавитном порядке
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
+
+    # 4️⃣ Считаем HMAC по Telegram-спецификации
+    secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
+    # 5️⃣ Отладка
     print("\n=== Telegram Auth Debug ===")
     print("initData:", init_data)
     print("parsed:", parsed)
@@ -223,10 +229,15 @@ async def telegram_auth(req: Request):
     print("equal:", computed_hash == check_hash)
     print("===========================\n")
 
+    # 6️⃣ Проверка
     if computed_hash != check_hash:
         return {"ok": False, "error": "invalid hash"}
 
+    # 7️⃣ Пользователь
     user_json = parsed.get("user")
-    user = json.loads(user_json) if user_json else None
+    try:
+        user = json.loads(user_json) if user_json else None
+    except json.JSONDecodeError:
+        user = None
 
     return {"ok": True, "user": user}
