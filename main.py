@@ -198,18 +198,24 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 @app.post("/auth")
 async def telegram_auth(req: Request):
-    init_data = (await req.body()).decode("utf-8").strip()
+    """
+    Validate initData from Telegram Mini App (official spec)
+    https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+    """
+    try:
+        body = await req.json()
+    except Exception:
+        return {"ok": False, "error": "invalid JSON"}
+
+    init_data = body.get("initData", "")
     if not init_data:
         return {"ok": False, "error": "missing initData"}
 
     import urllib.parse, hmac, hashlib, json
 
     # ✅ сначала полностью декодируем строку
-    parsed = dict(urllib.parse.parse_qsl(
-        urllib.parse.unquote(init_data),
-        keep_blank_values=True,
-        strict_parsing=False
-    ))
+    decoded = urllib.parse.unquote(init_data)
+    parsed = dict(urllib.parse.parse_qsl(decoded, keep_blank_values=True, strict_parsing=False))
 
     # ✅ заменяем '\/' на '/'
     for k, v in parsed.items():
@@ -222,7 +228,7 @@ async def telegram_auth(req: Request):
     # ✅ формируем строку строго по правилам Telegram
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
 
-    # ✅ вычисляем правильный секрет
+    # ✅ вычисляем правильный секрет по Telegram API
     secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
@@ -235,7 +241,7 @@ async def telegram_auth(req: Request):
     print("===========================\n")
 
     if not hmac.compare_digest(computed_hash, check_hash):
-        print("⚠️ Hash mismatch — likely browser or bad encoding in initData")
+        print("⚠️ Hash mismatch — likely browser or encoding mismatch")
         return {"ok": False, "error": "invalid hash"}
 
     user_json = parsed.get("user")
