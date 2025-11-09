@@ -230,6 +230,11 @@ async def telegram_auth(req: Request):
     parsed.pop("signature", None)
 
     # --- 3️⃣ Собираем data_check_string строго по алфавиту ---
+    # --- normalize escaped slashes in "user" JSON (Telegram signs without them) ---
+    if "user" in parsed:
+        parsed["user"] = parsed["user"].replace("\\/", "/")
+
+    # --- rebuild data_check_string after cleanup ---
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
 
     # --- 4️⃣ Вычисляем хэш ---
