@@ -229,17 +229,21 @@ async def telegram_auth(req: Request):
     # Telegram иногда добавляет "signature" — игнорируем
     parsed.pop("signature", None)
 
-    # --- 3️⃣ Собираем data_check_string строго по алфавиту ---
-    # --- normalize escaped slashes in "user" JSON (Telegram signs without them) ---
+    # --- 3️⃣ Собираем data_check_string строго по алфавиту и нормализуем ---
     if "user" in parsed:
         parsed["user"] = parsed["user"].replace("\\/", "/")
 
-    # --- rebuild data_check_string after cleanup ---
+    # Telegram использует URL-encoded значения при подписи
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
+    data_check_string_encoded = urllib.parse.unquote_plus(data_check_string)
 
     # --- 4️⃣ Вычисляем хэш ---
     secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
-    computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    computed_hash = hmac.new(
+        secret_key,
+        data_check_string_encoded.encode(),
+        hashlib.sha256
+    ).hexdigest()
 
     # --- 5️⃣ Отладочная информация ---
     print("\n=== Telegram Auth Debug ===")
