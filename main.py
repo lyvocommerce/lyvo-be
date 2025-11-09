@@ -190,57 +190,39 @@ async def webhook(req: Request):
     return {"ok": True, "echo": data}
 
 # -----------------------------------------------------------------------------
-# Telegram Auth — final version (2025-compatible)
+# Telegram Auth — final (stable)
 # -----------------------------------------------------------------------------
 import hmac, hashlib, urllib.parse, json
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
 @app.post("/auth")
 async def telegram_auth(req: Request):
-    """Verify Telegram WebApp initData (2025 final spec)"""
     data = await req.json()
     init_data = data.get("initData", "")
     if not init_data:
         return {"ok": False, "error": "missing initData"}
 
-    # 1️⃣ Parse initData
     parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
     check_hash = parsed.pop("hash", None)
     parsed.pop("signature", None)
     if not check_hash:
         return {"ok": False, "error": "no hash"}
 
-    # 2️⃣ Sort and rebuild string
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
-
-    # 3️⃣ Compute Telegram-compliant secret key (two-step HMAC)
     secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode("utf-8"), hashlib.sha256).digest()
-
-    # 4️⃣ Compute final hash
     computed_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
 
-    # 5️⃣ Normalize both to lowercase before comparison
-    check_hash_norm = check_hash.lower().strip()
-    computed_hash_norm = computed_hash.lower().strip()
-
     print("\n=== Telegram Auth Debug ===")
-    print("initData:", init_data)
-    print("parsed:", parsed)
-    print("data_check_string:", data_check_string)
-    print("check_hash:", check_hash_norm)
-    print("computed_hash:", computed_hash_norm)
-    print("equal:", hmac.compare_digest(computed_hash_norm, check_hash_norm))
+    print("BOT_TOKEN length:", len(BOT_TOKEN))
+    print("check_hash:", check_hash)
+    print("computed_hash:", computed_hash)
+    print("equal:", hmac.compare_digest(computed_hash.lower(), check_hash.lower()))
     print("===========================\n")
 
-    if not hmac.compare_digest(computed_hash_norm, check_hash_norm):
+    if not hmac.compare_digest(computed_hash.lower(), check_hash.lower()):
         return {"ok": False, "error": "invalid hash"}
 
-    # 6️⃣ Parse user info
     user_json = parsed.get("user")
-    try:
-        user = json.loads(user_json) if user_json else None
-    except json.JSONDecodeError:
-        user = None
-
+    user = json.loads(user_json) if user_json else None
     return {"ok": True, "user": user}
