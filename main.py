@@ -190,7 +190,7 @@ async def webhook(req: Request):
     return {"ok": True, "echo": data}
 
 # -----------------------------------------------------------------------------
-# Telegram Auth — final correct version for Mini App (WebApp)
+# Telegram Auth — FINAL version with double-decoding fix
 # -----------------------------------------------------------------------------
 import hmac, hashlib, urllib.parse, json
 
@@ -198,10 +198,6 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 @app.post("/auth")
 async def telegram_auth(req: Request):
-    """
-    Validate initData from Telegram Mini App (official)
-    Docs: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
-    """
     data = await req.json()
     init_data = data.get("initData", "")
     if not init_data:
@@ -211,18 +207,18 @@ async def telegram_auth(req: Request):
     print(repr(init_data))
     print("=====================================\n")
 
-    # Parse initData
-    parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
+    # 🩵 Попробуем двойное декодирование + fix escaped slashes
+    decoded = urllib.parse.unquote(init_data)
+    decoded = decoded.replace("\\/", "/")
+
+    parsed = dict(urllib.parse.parse_qsl(decoded, keep_blank_values=True))
     check_hash = parsed.pop("hash", None)
     parsed.pop("signature", None)
 
-    # Build data check string
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
 
-    # ✅ Correct algorithm for Mini Apps
-    # secret_key = HMAC_SHA256("WebAppData", bot_token)
+    # ✅ по спецификации: secret_key = HMAC_SHA256("WebAppData", bot_token)
     secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
-    # ✅ Then compute hash = HMAC_SHA256(secret_key, data_check_string)
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
     print("\n=== Telegram Auth Debug ===")
@@ -234,7 +230,7 @@ async def telegram_auth(req: Request):
     print("===========================")
 
     if not hmac.compare_digest(computed_hash, check_hash):
-        print("⚠️ Hash mismatch — likely browser or wrong BOT_TOKEN")
+        print("⚠️ Hash mismatch — likely browser or wrong BOT_TOKEN or escaped chars")
         return {"ok": False, "error": "invalid hash"}
 
     user_json = parsed.get("user")
