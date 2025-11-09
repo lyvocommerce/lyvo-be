@@ -198,33 +198,24 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 @app.post("/auth")
 async def telegram_auth(req: Request):
-    """
-    Validate initData from Telegram Mini App (official spec)
-    https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
-    """
-
-    # ✅ теперь читаем как обычный текст, а не JSON
     init_data = (await req.body()).decode("utf-8").strip()
     if not init_data:
         return {"ok": False, "error": "missing initData"}
 
     import urllib.parse, hmac, hashlib, json
 
-    # ✅ decode URL-encoded values safely
     parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True, strict_parsing=False))
 
-    # extract hash
     check_hash = parsed.pop("hash", None)
     if not check_hash:
         return {"ok": False, "error": "no hash"}
 
-    # optional field, not part of validation
-    parsed.pop("signature", None)
+    # ✅ Нормализуем: заменяем '\/' на '/'
+    for k, v in parsed.items():
+        parsed[k] = v.replace("\\/", "/")
 
-    # 🔧 normalize string (Telegram uses \n sorted by key)
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
 
-    # compute hash
     secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
