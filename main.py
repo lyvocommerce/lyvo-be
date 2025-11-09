@@ -207,6 +207,10 @@ async def telegram_auth(req: Request):
     if not init_data:
         return {"ok": False, "error": "missing initData"}
 
+    print("\n=== RAW initData (before parsing) ===")
+    print(repr(init_data))
+    print("=====================================\n")
+
     # Parse initData
     parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
     check_hash = parsed.pop("hash", None)
