@@ -217,8 +217,8 @@ async def telegram_auth(req: Request):
     # ✅ Формируем строку строго по правилам Telegram
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
 
-    # ✅ Вычисляем хэш
-    secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
+    # ✅ Правильный секретный ключ по Telegram API
+    secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
     print("\n=== Telegram Auth Debug ===")
