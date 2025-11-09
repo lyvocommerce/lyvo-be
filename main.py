@@ -190,7 +190,7 @@ async def webhook(req: Request):
     return {"ok": True, "echo": data}
 
 # -----------------------------------------------------------------------------
-# Telegram Auth — Final verified version (works in mobile Telegram)
+# Telegram Auth — correct version for WebApp (Mini App)
 # -----------------------------------------------------------------------------
 import hmac, hashlib, urllib.parse, json
 
@@ -198,23 +198,23 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 @app.post("/auth")
 async def telegram_auth(req: Request):
+    """
+    Validate initData from Telegram Mini App
+    https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+    """
     data = await req.json()
     init_data = data.get("initData", "")
     if not init_data:
         return {"ok": False, "error": "missing initData"}
 
-    parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True, strict_parsing=False))
+    parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
     check_hash = parsed.pop("hash", None)
-    if not check_hash:
-        return {"ok": False, "error": "no hash"}
     parsed.pop("signature", None)
-
-    # ✅ decode all values to avoid encoding mismatch
-    parsed = {k: urllib.parse.unquote(v) for k, v in parsed.items()}
 
     data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
 
-    secret_key = hashlib.sha256(BOT_TOKEN.encode()).digest()
+    # ✅ correct for Mini App:
+    secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
     computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
 
     print("\n=== Telegram Auth Debug ===")
@@ -229,9 +229,5 @@ async def telegram_auth(req: Request):
         return {"ok": False, "error": "invalid hash"}
 
     user_json = parsed.get("user")
-    try:
-        user = json.loads(user_json) if user_json else None
-    except json.JSONDecodeError:
-        user = None
-
+    user = json.loads(user_json) if user_json else None
     return {"ok": True, "user": user}
